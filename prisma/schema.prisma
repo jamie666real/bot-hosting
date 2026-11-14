@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  passwordHash  String?
+  createdAt     DateTime @default(now())
+  plans         Plan[]
+  bots          Bot[]
+}
+
+model Plan {
+  id          String   @id @default(cuid())
+  name        String
+  price       Float
+  features    String
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+model Bot {
+  id          String   @id @default(cuid())
+  name        String
+  status      String   @default("offline")
+  region      String
+  plan        String
+  type        String
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  createdAt   DateTime @default(now())
+}
