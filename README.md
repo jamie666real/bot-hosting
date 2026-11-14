@@ -1,57 +1,54 @@
 # BotHosting
 
-A private, single-administrator website for managing Discord bot servers through Pterodactyl. The web app runs as a Node.js process in its own Pterodactyl server; separate Pterodactyl servers run the hosted bots.
+A private, single- or multi-administrator website for managing Discord bot servers through Pterodactyl. The website runs as a Node.js process in its own Pterodactyl server; separate panel servers run the hosted bots.
 
-## Admin server provisioning
+## Add admin accounts from the Pterodactyl Console
 
-The admin page at `/dashboard/admin/servers/new` can provision a server through the Pterodactyl **Application API**. It loads locations, nodes, nests, eggs, and unassigned allocations from the panel, then creates a server with validated resource limits and the egg's default startup/Docker image. Optional egg environment values may be supplied as JSON overrides. This is intentionally restricted to the signed-in single admin.
+Start the website with the repository startup command `npm start`. The panel runner keeps the Next.js website running and listens for these commands in the website server's **Console**:
 
-Configure these server-side environment variables:
-
-- `PTERODACTYL_PANEL_URL`: HTTPS panel URL.
-- `PTERODACTYL_APPLICATION_API_KEY`: Application API key with only the permissions needed to view locations/nodes/nests/eggs/allocations and create servers. This is a highly privileged key. Keep it private and rotate it if exposed.
-- `PTERODACTYL_CLIENT_API_KEY`: Client API key for monitoring and power controls.
-- `PTERODACTYL_DEFAULT_USER_ID`: panel user ID that owns created servers. This should match the account for the Client API key so created servers can be managed.
-- `PTERODACTYL_ALLOWED_SERVER_IDS`: explicit comma-separated server identifiers. `*` is supported only if the Client API key belongs to a dedicated account used exclusively for this app; it permits any server visible to that key. Prefer explicit IDs when possible.
-
-Create separate panel keys; the Application key is never sent to the browser. Restrict panel users/keys and back up your panel. Server creation allocates the selected existing unassigned port allocation; it does not install bot source code or configure a Discord bot token for you.
-
-## Website admin authentication
-
-This version uses one administrator password, not customer accounts or public sign-up.
-
-1. Set `SESSION_SECRET` to `openssl rand -base64 48`.
-2. Generate a password hash locally with `npm run auth:hash -- "a-long-password-of-14-or-more-characters"` and put its `salt:hash` output in `ADMIN_PASSWORD_HASH`.
-3. Set `NEXT_PUBLIC_APP_URL` to the exact public origin (HTTPS in production).
-
-Never commit secrets or use `NEXT_PUBLIC_` for API keys. The admin app does not yet include customer accounts, per-tenant ownership, billing, subscriptions, rate limiting, or audit logging; do not offer it as a public hosting SaaS without implementing and reviewing those safeguards.
-
-## Host the website on Pterodactyl
-
-1. Create a separate website server with a maintained Node.js 20 egg and persistent storage.
-2. Install this repo, run `npm install` and `npm run build`, then set the startup command to `npm start`.
-3. Set `PORT` to the server's allocated port. `npm start` binds to `0.0.0.0` and uses `PORT` (fallback 3000).
-4. Add the environment variables above in the server configuration. Put a TLS-terminating reverse proxy/domain in front of it and use HTTPS.
-
-The bot servers are separate panel servers. Add the desired Node.js egg, provide the bot files, set required egg variables, and configure resource limits when creating them. The website itself is not a bot runtime.
-
-## Local development
-
-Requires Node.js 20+:
-
-```sh
-npm install
-cp .env.example .env
-npm run auth:hash -- "a-long-password-of-14-or-more-characters"
-# Set SESSION_SECRET, ADMIN_PASSWORD_HASH, panel keys, and IDs in .env.
-npm run dev
+```text
+help
+admin:add admin@example.com a-long-unique-password
+admin:list
 ```
 
-Open `/login`. For local HTTP, use `NEXT_PUBLIC_APP_URL=http://localhost:3000`.
+`admin:add` requires a password of at least 14 characters. It stores a salted scrypt hash in the SQLite database; the password is not stored as plaintext. Sign in at `/login` using the email and password. Only give Pterodactyl console access for the website server to people you trust as website administrators: anyone with console access can run admin-management commands.
 
-## Security limitations
+**Console caution:** Pterodactyl consoles may retain command input/output in logs or browser history. Use a unique password, avoid reusing other credentials, and restrict console access. For safer initial setup or account removal, stop the website server and use the Pterodactyl Startup command temporarily:
 
-- Application API key is highly privileged. Use only a dedicated key with least privilege; never expose or commit it.
-- Only signed-in admin routes perform provisioning, and create requests must have the configured origin.
-- No public user registration, billing, customer server isolation, rate limiting, audit log, bot file uploads, or account recovery exists.
-- The current `PTERODACTYL_ALLOWED_SERVER_IDS=*` mode is constrained by the servers visible to the Client API account, but is still broad. Use a dedicated panel account/key or explicit server IDs.
+```sh
+npm run admin:add -- admin@example.com 'a-long-unique-password'
+npm start
+```
+
+Restore the startup command to `npm start` after one-off commands. The app database must be on persistent storage. Remove another admin while the app is stopped with `npm run admin:remove -- admin@example.com`; it refuses to remove the final account. Back up the website server's `prisma` database file before upgrades.
+
+## Pterodactyl provisioning integration
+
+The admin page at `/dashboard/admin/servers/new` provisions servers through the panel Application API. Configure:
+
+- `PTERODACTYL_PANEL_URL`: HTTPS panel URL.
+- `PTERODACTYL_APPLICATION_API_KEY`: highly privileged Application API key with the minimum permissions to list locations/nodes/nests/eggs/allocations and create servers. Keep private.
+- `PTERODACTYL_CLIENT_API_KEY`: Client API key for monitoring and power controls.
+- `PTERODACTYL_DEFAULT_USER_ID`: panel user ID that owns provisioned servers.
+- `PTERODACTYL_ALLOWED_SERVER_IDS`: comma-separated allowed IDs. `*` only for a dedicated client API account used exclusively by this app.
+- `SESSION_SECRET`: at least 32 random characters; generate with `openssl rand -base64 48`.
+- `NEXT_PUBLIC_APP_URL`: exact public website origin, HTTPS in production.
+- `DATABASE_URL`: persistent SQLite path, default `file:./dev.db` (Prisma resolves it relative to the schema file in `prisma/`).
+
+The Application key is never sent to the browser. The server form loads panel locations/nodes/nests/eggs/available allocations and creates with validated limits. It does not upload source code; install bot files/configuration using the panel separately.
+
+## Host this website on Pterodactyl
+
+1. Create a separate website server with a maintained Node.js 20 egg and persistent storage.
+2. Install repository dependencies with `npm install`, build with `npm run build`, and set the startup command to `npm start`.
+3. Set `PORT` to the server's allocation. The runner binds the website to `0.0.0.0` and `PORT` (fallback 3000), while also accepting the admin commands above from the panel console.
+4. Configure all secret environment variables in the server startup settings. Use a TLS-terminating reverse proxy/domain and HTTPS.
+
+## Security and production limitations
+
+- Admin passwords are scrypt-hashed and sessions are signed, HTTP-only cookies.
+- Admin console commands can create privileged website accounts; treat Pterodactyl console permissions as website admin permissions.
+- Console command lines may be stored in panel logs. Use unique passwords, restrict panel permissions, and avoid reusing credentials.
+- Application API keys are powerful. Use least privilege, dedicated keys, and rotate exposed keys.
+- This project has no public sign-up, customer accounts, billing, rate limiting, or audit trail. It is an admin control panel, not yet a multi-tenant hosting SaaS.

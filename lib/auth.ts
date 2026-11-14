@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 export const SESSION_COOKIE = 'bot_hosting_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
 
-type Session = { role: 'admin'; exp: number };
+type Session = { sub: string; email: string; role: 'admin'; exp: number };
 
 function secret() {
   const value = process.env.SESSION_SECRET;
@@ -11,8 +11,13 @@ function secret() {
   return value;
 }
 
-export function createSession() {
-  const payload: Session = { role: 'admin', exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS };
+export function createSession(adminId: string, email: string) {
+  const payload: Session = {
+    sub: adminId,
+    email,
+    role: 'admin',
+    exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
+  };
   const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const signature = createHmac('sha256', secret()).update(encoded).digest('base64url');
   return { value: `${encoded}.${signature}`, maxAge: SESSION_TTL_SECONDS };
@@ -27,7 +32,8 @@ export function verifySession(value?: string | null): boolean {
     const actual = Buffer.from(supplied, 'base64url');
     if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return false;
     const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString()) as Session;
-    return payload.role === 'admin' && Number.isInteger(payload.exp) && payload.exp > Math.floor(Date.now() / 1000);
+    return typeof payload.sub === 'string' && typeof payload.email === 'string' && payload.role === 'admin'
+      && Number.isInteger(payload.exp) && payload.exp > Math.floor(Date.now() / 1000);
   } catch {
     return false;
   }

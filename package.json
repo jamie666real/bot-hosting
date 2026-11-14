@@ -1,16 +1,19 @@
 {
   "name": "bot-hosting-platform",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "start": "next start -H 0.0.0.0 -p ${PORT:-3000}",
-    "start:pterodactyl": "npm run build && npm run start",
+    "build": "prisma generate && next build",
+    "start": "node scripts/panel-runner.mjs",
+    "start:pterodactyl": "npm start",
     "lint": "next lint",
     "auth:hash": "node scripts/hash-password.mjs",
+    "admin:add": "node scripts/add-admin.mjs",
+    "admin:remove": "node scripts/remove-admin.mjs",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev --name init"
+    "prisma:migrate": "prisma migrate dev --name init",
+    "db:push": "prisma db push"
   },
   "dependencies": {
     "@prisma/client": "^5.15.0",

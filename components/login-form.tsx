@@ -15,7 +15,7 @@ export function LoginForm() {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: form.get('password') }),
+        body: JSON.stringify({ email: form.get('email'), password: form.get('password') }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? 'Sign in failed.');
@@ -29,7 +29,12 @@ export function LoginForm() {
   return (
     <form onSubmit={submit} className="space-y-5">
       <div>
-        <label htmlFor="password" className="mb-2 block text-sm font-medium text-slate-200">Admin password</label>
+        <label htmlFor="email" className="mb-2 block text-sm font-medium text-slate-200">Admin email</label>
+        <input id="email" name="email" type="email" autoComplete="username" required
+          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-slate-100 outline-none focus:border-brand-500" />
+      </div>
+      <div>
+        <label htmlFor="password" className="mb-2 block text-sm font-medium text-slate-200">Password</label>
         <input id="password" name="password" type="password" autoComplete="current-password" required
           className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-slate-100 outline-none focus:border-brand-500" />
       </div>
