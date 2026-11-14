@@ -1,15 +1,3 @@
-import type { Metadata } from 'next';
-import './globals.css';
-
-export const metadata: Metadata = {
-  title: 'BotHosting',
-  description: 'Discord bot hosting platform',
-};
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="en">
-      <body>{children}</body>
-    </html>
-  );
+export default function MarketingLayout({ children }: { children: React.ReactNode }) {
+  return children;
 }
