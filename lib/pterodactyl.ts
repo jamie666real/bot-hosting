@@ -32,21 +32,31 @@ export function authorizePanelRequest(request: Request): boolean {
 export function assertAllowedServerId(serverId: string): string {
   const normalized = serverId.toLowerCase();
   if (!/^[a-z0-9]{1,64}$/.test(normalized)) throw new PterodactylError('Invalid Pterodactyl server identifier.', 400);
-  if (!config().allowedIds.has(normalized)) throw new PterodactylError('This server is not in PTERODACTYL_ALLOWED_SERVER_IDS.', 404);
+  const { allowedIds } = config();
+  if (!allowedIds.has('*') && !allowedIds.has(normalized)) throw new PterodactylError('This server is not in PTERODACTYL_ALLOWED_SERVER_IDS.', 404);
   return normalized;
 }
 
 export async function panelRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const { panelUrl, apiKey } = config();
+  return requestPanel<T>(`/api/client${path}`, process.env.PTERODACTYL_CLIENT_API_KEY?.trim(), init);
+}
+
+export async function panelApplicationRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  return requestPanel<T>(`/api/application${path}`, process.env.PTERODACTYL_APPLICATION_API_KEY?.trim(), init);
+}
+
+async function requestPanel<T>(path: string, apiKey: string | undefined, init?: RequestInit): Promise<T> {
+  const { panelUrl } = config();
+  if (!apiKey) throw new PterodactylError('The required Pterodactyl API key is not configured.', 503);
   let response: Response;
   try {
-    response = await fetch(`${panelUrl}/api/client${path}`, {
-      ...init, cache: 'no-store', signal: AbortSignal.timeout(10_000),
+    response = await fetch(`${panelUrl}${path}`, {
+      ...init, cache: 'no-store', signal: AbortSignal.timeout(15_000),
       headers: { Accept: `${API_VERSION}, application/json`, Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', ...init?.headers },
     });
   } catch { throw new PterodactylError('Could not connect to the Pterodactyl panel.', 502); }
   if (!response.ok) {
-    const status = response.status === 404 ? 404 : response.status === 429 ? 503 : 502;
+    const status = response.status === 404 ? 404 : response.status === 422 ? 400 : response.status === 429 ? 503 : 502;
     throw new PterodactylError(`Pterodactyl API request failed (HTTP ${response.status}).`, status);
   }
   try { return (await response.json()) as T; } catch { throw new PterodactylError('Pterodactyl returned an invalid response.', 502); }

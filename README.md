@@ -1,55 +1,57 @@
 # BotHosting
 
-A private, single-administrator website for managing Discord bot servers that run on Pterodactyl. The website itself is a separate Node.js app; Pterodactyl/Wings hosts the actual bot server instances. This project does **not** make the website's own container a bot runtime.
+A private, single-administrator website for managing Discord bot servers through Pterodactyl. The web app runs as a Node.js process in its own Pterodactyl server; separate Pterodactyl servers run the hosted bots.
 
-## What works
+## Admin server provisioning
 
-- Password-protected administrator login with signed, HTTP-only session cookie.
-- Pterodactyl Client API integration to list allowlisted servers, view CPU/memory/disk/status, and send start/stop/restart commands.
-- Server-side credentials only; the panel API key is never sent to the browser.
-- HTTPS enforcement for remote panel URLs; origin checking on power actions.
-- Designed to run as a Node.js process in its own Pterodactyl server/container.
+The admin page at `/dashboard/admin/servers/new` can provision a server through the Pterodactyl **Application API**. It loads locations, nodes, nests, eggs, and unassigned allocations from the panel, then creates a server with validated resource limits and the egg's default startup/Docker image. Optional egg environment values may be supplied as JSON overrides. This is intentionally restricted to the signed-in single admin.
 
-This is a self-hosted admin MVP, **not** a multi-user commercial hosting SaaS. It deliberately does not create/delete panel servers, accept bot source uploads, expose file manager/console/websocket access, process payments, or support customer accounts. Those features need tenant identity/authorization, resource quotas, abuse controls, billing and operational auditing before safely exposing them to users.
+Configure these server-side environment variables:
+
+- `PTERODACTYL_PANEL_URL`: HTTPS panel URL.
+- `PTERODACTYL_APPLICATION_API_KEY`: Application API key with only the permissions needed to view locations/nodes/nests/eggs/allocations and create servers. This is a highly privileged key. Keep it private and rotate it if exposed.
+- `PTERODACTYL_CLIENT_API_KEY`: Client API key for monitoring and power controls.
+- `PTERODACTYL_DEFAULT_USER_ID`: panel user ID that owns created servers. This should match the account for the Client API key so created servers can be managed.
+- `PTERODACTYL_ALLOWED_SERVER_IDS`: explicit comma-separated server identifiers. `*` is supported only if the Client API key belongs to a dedicated account used exclusively for this app; it permits any server visible to that key. Prefer explicit IDs when possible.
+
+Create separate panel keys; the Application key is never sent to the browser. Restrict panel users/keys and back up your panel. Server creation allocates the selected existing unassigned port allocation; it does not install bot source code or configure a Discord bot token for you.
+
+## Website admin authentication
+
+This version uses one administrator password, not customer accounts or public sign-up.
+
+1. Set `SESSION_SECRET` to `openssl rand -base64 48`.
+2. Generate a password hash locally with `npm run auth:hash -- "a-long-password-of-14-or-more-characters"` and put its `salt:hash` output in `ADMIN_PASSWORD_HASH`.
+3. Set `NEXT_PUBLIC_APP_URL` to the exact public origin (HTTPS in production).
+
+Never commit secrets or use `NEXT_PUBLIC_` for API keys. The admin app does not yet include customer accounts, per-tenant ownership, billing, subscriptions, rate limiting, or audit logging; do not offer it as a public hosting SaaS without implementing and reviewing those safeguards.
 
 ## Host the website on Pterodactyl
 
-1. In Pterodactyl, create a separate server for this website using a maintained Node.js 20 egg. Do not run this app inside one of the customer bot servers. Give the website server persistent disk and expose its allocated port.
-2. Install this repository into that server using the egg's Git clone/install feature or upload the source. Run `npm install` and `npm run build` during installation. Set the server startup command to `npm start` (or `npm run start:pterodactyl` if the egg does not run a build/install step separately).
-3. Set the egg's `PORT` to its allocated port. `npm start` binds to `0.0.0.0` and uses `PORT` (fallback 3000). Set `NEXT_PUBLIC_APP_URL` to the public HTTPS URL serving this website.
-4. Configure the environment variables below in the Pterodactyl server's startup variables. Never commit secrets or put them in a `NEXT_PUBLIC_*` variable.
-5. Put a TLS-terminating reverse proxy/domain in front of this website. The panel URL must also be HTTPS when remote.
+1. Create a separate website server with a maintained Node.js 20 egg and persistent storage.
+2. Install this repo, run `npm install` and `npm run build`, then set the startup command to `npm start`.
+3. Set `PORT` to the server's allocated port. `npm start` binds to `0.0.0.0` and uses `PORT` (fallback 3000).
+4. Add the environment variables above in the server configuration. Put a TLS-terminating reverse proxy/domain in front of it and use HTTPS.
 
-### App environment
-
-- `SESSION_SECRET`: generate with `openssl rand -base64 48`; keep stable across restarts.
-- `ADMIN_PASSWORD_HASH`: generate locally with `npm run auth:hash -- "a-long-password-of-14-or-more-characters"`, then copy the printed `salt:hash` value to the server environment. This app has a single admin account and no public registration.
-- `PTERODACTYL_PANEL_URL`: panel base URL, e.g. `https://panel.example.com`.
-- `PTERODACTYL_CLIENT_API_KEY`: a Client API key belonging to the account that owns the bot servers. Create it with only the client permissions needed for list/read resources and power controls. Never use an Application API key in this app.
-- `PTERODACTYL_ALLOWED_SERVER_IDS`: comma-separated short server identifiers from the panel. Only these IDs can be operated through the dashboard; the key's other servers are hidden.
-- `NEXT_PUBLIC_APP_URL`: exact public website origin, e.g. `https://hosting.example.com` (used to validate power action origins).
-- `PORT`: Pterodactyl allocation port.
-
-The Pterodactyl bot servers must be created separately in the panel, with a Node.js egg, resource limits, and the bot files/configuration set up there. Add only their short identifiers to the allowlist. The dashboard can then monitor and power-manage those servers.
+The bot servers are separate panel servers. Add the desired Node.js egg, provide the bot files, set required egg variables, and configure resource limits when creating them. The website itself is not a bot runtime.
 
 ## Local development
 
-Use Node.js 20+:
+Requires Node.js 20+:
 
 ```sh
 npm install
 cp .env.example .env
 npm run auth:hash -- "a-long-password-of-14-or-more-characters"
-# Put the generated hash and a random SESSION_SECRET in .env.
+# Set SESSION_SECRET, ADMIN_PASSWORD_HASH, panel keys, and IDs in .env.
 npm run dev
 ```
 
-Open `http://localhost:3000/login`. For local HTTP, set `NEXT_PUBLIC_APP_URL=http://localhost:3000`. To test Pterodactyl calls, configure the panel URL, Client API key, and allowed server identifiers.
+Open `/login`. For local HTTP, use `NEXT_PUBLIC_APP_URL=http://localhost:3000`.
 
-## Security and production limitations
+## Security limitations
 
-- This app is an admin dashboard; do not provide its admin password/session to customers.
-- Do not expose panel API keys to browser code, bot containers, logs, source control, or image build args.
-- Protect the website with HTTPS, keep Node.js and dependencies current, back up Pterodactyl data, and restrict outbound access where practical.
-- There is no signup, per-customer ownership, tenant isolation, billing, rate limiting, audit log, automated provisioning, source upload, or account recovery. Add/review those before offering third-party hosting.
-- The API key should be dedicated to the panel account whose servers are being managed; the allowlist is an additional guard, not a substitute for least privilege.
+- Application API key is highly privileged. Use only a dedicated key with least privilege; never expose or commit it.
+- Only signed-in admin routes perform provisioning, and create requests must have the configured origin.
+- No public user registration, billing, customer server isolation, rate limiting, audit log, bot file uploads, or account recovery exists.
+- The current `PTERODACTYL_ALLOWED_SERVER_IDS=*` mode is constrained by the servers visible to the Client API account, but is still broad. Use a dedicated panel account/key or explicit server IDs.
